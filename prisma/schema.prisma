@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CLIENT
+  DIRECTOR
+  ADMIN
+}
+
+enum DisputeStatus {
+  NEW_CUSTOMER
+  REPORT_WAITING
+  REPORT_UPLOADED
+  AI_EVALUATING
+  SUMMARY_SENT
+  IN_PROGRESS
+  COMPLETED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          Role      @default(CLIENT)
+  stripeCustomerId String?
+  directorId    String?   // For clients, who referred them
+  
+  accounts      Account[]
+  sessions      Session[]
+  profile       Profile?
+  disputes      Dispute[]
+  earnings      Earning[] @relation("DirectorEarnings")
+  payouts       PayoutRequest[] @relation("DirectorPayouts")
+  
+  director      User?     @relation("Referrals", fields: [directorId], references: [id])
+  clients       User[]    @relation("Referrals")
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?  @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Profile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  address     String?
+  cellPhone   String?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Dispute {
+  id            String         @id @default(cuid())
+  userId        String
+  status        DisputeStatus  @default(NEW_CUSTOMER)
+  reportUrl     String?        // URL to uploaded PDF
+  summarySentAt DateTime?
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  letters       Letter[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Letter {
+  id             String    @id @default(cuid())
+  disputeId      String
+  content        String    @db.Text
+  docusignId     String?
+  signedAt       DateTime?
+  postgridId     String?
+  postgridStatus String?
+  cost           Float     @default(2.50)
+  dispute        Dispute   @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  earnings       Earning[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Earning {
+  id          String   @id @default(cuid())
+  directorId  String
+  letterId    String   @unique
+  amount      Float    @default(0.50)
+  director    User     @relation("DirectorEarnings", fields: [directorId], references: [id], onDelete: Cascade)
+  letter      Letter   @relation(fields: [letterId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}
+
+model PayoutRequest {
+  id          String   @id @default(cuid())
+  directorId  String
+  amount      Float
+  status      String   @default("PENDING") // PENDING, PAID, REJECTED
+  director    User     @relation("DirectorPayouts", fields: [directorId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
