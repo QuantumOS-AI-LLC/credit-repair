@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { AffiliateTracker } from "@/components/AffiliateTracker";
+import { Suspense } from "react";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -21,7 +22,9 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <Providers>
-          <AffiliateTracker />
+          <Suspense fallback={null}>
+            <AffiliateTracker />
+          </Suspense>
           {children}
         </Providers>
       </body>
