@@ -28,9 +28,15 @@ export default function OnboardingPage() {
     setIsSubmitting(true)
     
     try {
-      // In a real app we'd call an API route here: /api/profile
-      // For now we simulate an update and redirect based on role
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      // Send webhook for profile completion
+      await fetch('/api/webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'PROFILE_COMPLETED',
+          data: { address, cellPhone }
+        })
+      });
       
       const role = (session?.user as { role?: string })?.role?.toLowerCase() || 'client'
       router.push(`/dashboard/${role}`)

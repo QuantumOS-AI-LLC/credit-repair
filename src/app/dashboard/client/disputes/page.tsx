@@ -1,158 +1,123 @@
-import { PlusSquare, Mail, FileText, Grid, Search, Printer, Trash2, Pencil, Download, Send, CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react"
+
+import { PlusSquare, Mail, FileText, Grid, Search, Printer, Trash2, CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react"
 import { prisma } from "@/lib/prisma"
+import Link from "next/link"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
+import DisputeTable from "@/components/DisputeTable"
 
-export default async function DisputesPage() {
-  const user = await prisma.user.findFirst({ where: { role: "CLIENT" } })
-  const userId = user?.id || "no-user"
+export default async function DisputesPage({ 
+  searchParams 
+}: { 
+  searchParams: Promise<{ q?: string; status?: string }> 
+}) {
+  const session = await getServerSession(authOptions)
+  const query = (await searchParams).q || ""
+  const filterStatus = (await searchParams).status || "unsent"
+  
+  if (!session?.user) return null
+  const userId = session.user.id
 
+  // Fetch real letters from DB with filtering
   const dbLetters = await prisma.letter.findMany({
-    where: { dispute: { userId } },
+    where: { 
+      dispute: { userId },
+      OR: [
+        { content: { contains: query, mode: 'insensitive' } },
+        { postgridId: { contains: query, mode: 'insensitive' } }
+      ]
+    },
     include: { dispute: true },
     orderBy: { createdAt: "desc" }
   })
   
-  // Transform DB letters or fallback to mock if DB is completely empty (for UI review purposes)
-  const letters = dbLetters.length > 0 ? dbLetters.map((l: { id: string; createdAt: Date }) => ({
+  // Logical filtering based on status
+  const filteredLetters = dbLetters.filter(l => {
+    if (filterStatus === 'sent') return !!l.postgridId || !!l.postgridStatus;
+    if (filterStatus === 'received') return !!l.signedAt; // Simple logic: received = signed for now
+    return !l.postgridId && !l.postgridStatus; // unsent
+  })
+
+  // Map DB letters to UI format
+  const letters = filteredLetters.map((l) => ({
     id: l.id,
     date: l.createdAt.toLocaleDateString(),
-    to: "Bureau/Creditor", // In a full app this would be extracted from JSON content
-    name: "Automated Dispute Letter",
+    to: l.postgridId ? "Mailed via PostGrid" : "Bureau/Creditor",
+    name: l.content.length > 30 ? l.content.substring(0, 30) + '...' : l.content,
     type: "AI Generated",
-    active: false
-  })) : [
-    { id: 'mock1', date: "5/25/2023", to: "TransUnion", name: "Collection Round 1 (bureau)", type: "Account", active: false },
-    { id: 'mock2', date: "5/25/2023", to: "Experian", name: "Collection Round 1 (bureau)", type: "Account", active: false },
-    { id: 'mock3', date: "5/25/2023", to: "Equifax", name: "Collection Round 1 (bureau)", type: "Account", active: true },
-  ]
+    active: false,
+    status: l.postgridStatus ? (l.postgridStatus === 'SENT' ? 'Sent' : l.postgridStatus) : "Unsent"
+  }))
 
   return (
-    <div className="w-full relative">
+    <div className="w-full relative animate-fade-in">
       
       {/* Top Header */}
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-4">
-          <h2 className="text-xl font-medium text-gray-800">Disputes</h2>
-          <div className="flex border border-gray-300 rounded-sm text-sm overflow-hidden bg-white">
-            <button className="px-3 py-1 bg-[#f0f9ff] text-[#0284c7] border-r border-gray-300">Basic</button>
-            <button className="px-3 py-1 text-gray-500 hover:bg-gray-50">Advanced</button>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Dispute Center</h2>
+          <div className="flex border border-slate-200 rounded-lg text-sm overflow-hidden bg-white shadow-sm">
+            <button className="px-4 py-1.5 bg-indigo-50 text-indigo-700 font-bold border-r border-slate-200">Basic</button>
+            <button className="px-4 py-1.5 text-slate-500 hover:bg-slate-50 font-medium">Advanced Control</button>
           </div>
         </div>
 
-        {/* Global Success Notification Overlay */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-white border border-gray-200 shadow-sm rounded-full px-6 py-2 flex items-center gap-2 text-sm text-gray-600">
-          <CheckCircle2 size={16} className="text-[#22c55e]" />
-          Disputes created successfully.
-        </div>
+        {/* Success Overlay - Optional UI element */}
+        {dbLetters.length > 0 && (
+           <div className="bg-emerald-50 border border-emerald-100 shadow-sm rounded-full px-6 py-2 flex items-center gap-2 text-sm text-emerald-700 font-semibold animate-scale-in">
+            <CheckCircle2 size={16} className="text-emerald-500" />
+            {dbLetters.length} active letter{dbLetters.length === 1 ? '' : 's'} in progress
+          </div>
+        )}
       </div>
 
       {/* Action Buttons Row */}
-      <div className="flex flex-wrap items-center gap-2 mb-6 w-full">
-        <button className="flex items-center gap-2 bg-white border-2 border-transparent border-t-4 border-t-[#3b82f6] shadow-sm px-4 py-3 rounded-sm text-[#3b82f6] hover:bg-gray-50">
-          <FileText size={20} />
-          <span className="font-bold text-xs">NEW<br/>DISPUTE</span>
-        </button>
+      <div className="flex flex-wrap items-center gap-3 mb-8 w-full">
+        <Link href="/dashboard/client/new" className="flex items-center gap-3 bg-white border border-slate-200 border-t-4 border-t-indigo-600 shadow-xl shadow-slate-100 px-6 py-4 rounded-xl text-indigo-600 hover:bg-slate-50 transition-all hover:-translate-y-1">
+          <FileText size={24} />
+          <span className="font-black text-xs leading-tight uppercase">Analyze &<br/>New Dispute</span>
+        </Link>
         
-        <button className="flex items-center gap-2 bg-white border border-gray-300 shadow-sm px-4 py-3 rounded-sm text-gray-500 hover:bg-gray-50">
-          <Mail size={20} className="text-[#3b82f6]" />
-          <span className="font-bold text-xs text-gray-600">RECEIVED<br/>REPLY</span>
-        </button>
+        <Link href="/dashboard/client/disputes/log-reply" className="flex items-center gap-3 bg-white border border-slate-200 shadow-sm px-6 py-4 rounded-xl text-slate-400 group hover:border-indigo-200 transition-all decoration-none">
+          <Mail size={24} className="group-hover:text-indigo-600 transition-colors" />
+          <span className="font-bold text-xs uppercase leading-tight text-slate-500 group-hover:text-indigo-700">Log Bureau<br/>Reply</span>
+        </Link>
 
-        <button className="flex items-center gap-2 bg-white border border-gray-300 shadow-sm px-4 py-3 rounded-sm text-gray-500 hover:bg-gray-50">
-          <PlusSquare size={20} className="text-[#3b82f6]" />
-          <span className="font-bold text-xs text-gray-600">FOLLOWUP<br/>LETTER</span>
-        </button>
+        <Link href="/dashboard/client/disputes/followup" className="flex items-center gap-3 bg-white border border-slate-200 shadow-sm px-6 py-4 rounded-xl text-slate-400 group hover:border-indigo-200 transition-all decoration-none">
+          <PlusSquare size={24} className="group-hover:text-indigo-600 transition-colors" />
+          <span className="font-bold text-xs uppercase leading-tight text-slate-500 group-hover:text-indigo-700">Followup<br/>Letter</span>
+        </Link>
 
-        <button className="flex items-center gap-2 bg-white border border-gray-300 shadow-sm px-4 py-3 rounded-sm text-gray-500 hover:bg-gray-50">
-          <FileText size={20} className="text-[#3b82f6]" />
-          <span className="font-bold text-xs text-gray-600">OTHER<br/>LETTER</span>
-        </button>
+        <Link href="/dashboard/client/disputes/custom" className="flex items-center gap-3 bg-white border border-slate-200 shadow-sm px-6 py-4 rounded-xl text-slate-400 group hover:border-indigo-200 transition-all decoration-none">
+          <PlusSquare size={24} className="group-hover:text-indigo-600 transition-colors" />
+          <span className="font-bold text-xs uppercase leading-tight text-slate-500 group-hover:text-indigo-700">Custom<br/>Request</span>
+        </Link>
 
-        <button className="flex items-center gap-2 bg-white border border-gray-300 shadow-sm px-4 py-3 rounded-sm text-gray-500 hover:bg-gray-50">
-          <Grid size={20} className="text-[#0ea5e9]" />
-          <span className="font-bold text-xs text-gray-600">DISPUTES<br/>OVERVIEW</span>
-        </button>
+        <Link href="/dashboard/client" className="flex items-center gap-3 bg-white border border-slate-200 shadow-sm px-6 py-4 rounded-xl text-slate-400 group hover:border-sky-200 transition-all decoration-none">
+          <Grid size={24} className="text-sky-500 group-hover:scale-110 transition-transform" />
+          <span className="font-bold text-xs uppercase leading-tight text-slate-500 group-hover:text-slate-700">Full<br/>Overview</span>
+        </Link>
 
-        <div className="w-10 h-10 flex items-center justify-center bg-white border border-gray-300 rounded-full shadow-sm ml-2">
-          {/* Mock Bee Icon */}
-          <span className="text-xl">🐝</span>
-        </div>
-
-        <div className="ml-auto">
-          <a href="#" className="text-[#3b82f6] text-sm hover:underline">Watch the tutorial video</a>
+        <div className="w-12 h-12 flex items-center justify-center bg-white border border-slate-200 rounded-full shadow-lg hover:rotate-12 transition-transform cursor-pointer ml-auto">
+          <span className="text-2xl" title="AI Assistant Active">🤖</span>
         </div>
       </div>
 
       {/* Main Table Card */}
-      <div className="bg-white border border-gray-300 shadow-sm rounded-sm">
+      <div className="bg-white border border-slate-200 shadow-2xl shadow-slate-100 rounded-3xl overflow-hidden pb-4">
         
-        {/* Table Toolbar */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <div className="flex items-center gap-6">
-            <span className="font-bold text-gray-700">Letters</span>
-            <div className="flex gap-4 text-sm font-medium">
-              <button className="text-[#3b82f6] border-b-2 border-[#3b82f6] pb-1">Unsent</button>
-              <button className="text-gray-500 hover:text-gray-700 pb-1">Sent</button>
-              <button className="text-gray-500 hover:text-gray-700 pb-1">Received</button>
-            </div>
-            
-            <div className="flex items-center gap-2 ml-4">
-              <div className="relative">
-                <Search size={14} className="absolute left-2 top-1.5 text-gray-400" />
-                <input type="text" placeholder="Search" className="border border-gray-300 rounded-sm pl-7 pr-3 py-1 text-sm w-48 focus:outline-none" />
-              </div>
-              <button className="text-gray-600 text-sm font-medium px-2 py-1 border border-transparent hover:border-gray-300 rounded-sm">Clear</button>
-            </div>
-          </div>
-          
-          <div className="flex gap-4 text-gray-400">
-            <Printer size={18} className="hover:text-gray-600 cursor-pointer" />
-            <Trash2 size={18} className="hover:text-gray-600 cursor-pointer" />
-          </div>
+        {/* Table Content */}
+        <div className="w-full">
+          <DisputeTable initialLetters={letters} />
         </div>
 
-        {/* Table */}
-        <div className="w-full overflow-x-auto">
-          <table className="w-full text-left text-sm text-gray-600">
-            <thead className="bg-[#f8fafc] text-xs font-bold text-gray-600 border-b border-gray-200">
-              <tr>
-                <th className="px-6 py-4 w-10">
-                  <input type="checkbox" className="rounded-sm border-gray-300" />
-                </th>
-                <th className="px-4 py-4 cursor-pointer hover:bg-gray-100">Date <span className="text-[#9ea3b0] ml-1">⇅</span></th>
-                <th className="px-4 py-4 cursor-pointer hover:bg-gray-100">To <span className="text-[#9ea3b0] ml-1">⇅</span></th>
-                <th className="px-4 py-4">Letter Name</th>
-                <th className="px-4 py-4 cursor-pointer hover:bg-gray-100">Type <span className="text-[#9ea3b0] ml-1">⇅</span></th>
-                <th className="px-4 py-4 text-right"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {letters.map((letter: { id: string; date: string; to: string; name: string; type: string; active: boolean }) => (
-                <tr key={letter.id} className={`border-b border-gray-100 hover:bg-gray-50 ${letter.active ? 'bg-[#f0f9ff]' : ''}`}>
-                  <td className="px-6 py-4">
-                    <input type="checkbox" className="rounded-sm border-gray-300" />
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap">{letter.date}</td>
-                  <td className="px-4 py-4">{letter.to}</td>
-                  <td className="px-4 py-4 text-gray-500">{letter.name}</td>
-                  <td className="px-4 py-4">{letter.type}</td>
-                  <td className="px-4 py-4 text-right text-gray-400 font-light flex items-center justify-end gap-4">
-                    <Pencil size={16} className="text-[#0ea5e9] cursor-pointer hover:text-blue-600" />
-                    <Download size={16} className="text-[#0ea5e9] cursor-pointer hover:text-blue-600" />
-                    <Send size={16} className="text-[#3b82f6] cursor-pointer hover:text-blue-700" />
-                    <Trash2 size={16} className="text-red-400 cursor-pointer hover:text-red-600" />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination Box */}
-        <div className="flex justify-end p-4 border-t border-gray-200">
-           <div className="flex items-center gap-2 text-sm text-[#0ea5e9]">
-             <ChevronLeft size={16} className="text-gray-400 cursor-not-allowed" />
-             <button className="px-3 py-1 bg-white border border-[#0ea5e9] rounded-sm text-[#0ea5e9] font-medium">1</button>
-             <ChevronRight size={16} className="cursor-pointer" />
+        {/* Global Action Footer */}
+        <div className="flex justify-between items-center px-8 py-6 border-t border-slate-50 bg-slate-50/20">
+           <div className="text-xs text-slate-400 font-medium">Showing {letters.length} results in total</div>
+           <div className="flex items-center gap-2">
+             <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 cursor-not-allowed"><ChevronLeft size={16} /></button>
+             <button className="w-8 h-8 flex items-center justify-center rounded-lg bg-white border border-indigo-600 text-indigo-600 font-bold text-xs shadow-sm">1</button>
+             <button className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-slate-300 transition-all"><ChevronRight size={16} /></button>
            </div>
         </div>
 

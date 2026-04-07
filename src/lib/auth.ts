@@ -3,6 +3,7 @@ import GoogleProvider from "next-auth/providers/google"
 import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import { prisma } from "./prisma"
 import { cookies } from "next/headers"
+import { sendWebhook } from "./webhook"
 
 // Module augmentation for next-auth types
 declare module "next-auth" {
@@ -59,13 +60,31 @@ export const authOptions: NextAuthOptions = {
               where: { id: user.id },
               data: { directorId: ref }
             })
-          }
         }
-      } catch (error) {
-        console.error("Error linking referral/role to user:", error)
       }
+
+      // Send Webhook after all updates
+      const updatedUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        include: { director: true }
+      })
+
+      if (updatedUser) {
+        await sendWebhook('USER_REGISTERED', {
+          id: updatedUser.id,
+          email: updatedUser.email,
+          name: updatedUser.name,
+          role: updatedUser.role,
+          directorId: updatedUser.directorId,
+          directorName: updatedUser.director?.name,
+          directorEmail: updatedUser.director?.email,
+        });
+      }
+    } catch (error) {
+      console.error("Error linking referral/role to user or sending webhook:", error)
     }
-  },
+  }
+},
 
   callbacks: {
     async jwt({ token, user }) {
