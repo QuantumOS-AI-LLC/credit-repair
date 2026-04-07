@@ -1,7 +1,5 @@
 @import "tailwindcss";
 
-@import "tailwindcss";
-
 @theme {
   /* Classic Corporate Trust Palette Mapping to Tailwind Utilities */
   --color-bg-main: #ffffff;
